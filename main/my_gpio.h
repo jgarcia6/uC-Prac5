@@ -27,6 +27,7 @@ typedef enum {
     eGpioNum21 = 21,   /*!< GPIO21, input and output */
     eGpioNum22 = 22,   /*!< GPIO22, input and output */
     eGpioNum23 = 23,   /*!< GPIO23, input and output */
+    eGpioNum24 = 24,   /*!< GPIO24, input and output */
     eGpioNum25 = 25,   /*!< GPIO25, input and output */
     eGpioNum26 = 26,   /*!< GPIO26, input and output */
     eGpioNum27 = 27,   /*!< GPIO27, input and output */

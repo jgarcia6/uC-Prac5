@@ -7,59 +7,103 @@
 #include "esp_spi_flash.h"
 #include "my_gpio.h"
 
-#define LED_GPIO    eGpioNum2
-#define BTN_GPIO    eGpioNum4
+#define LED_LINE0   eGpioNum23
+#define LED_LINE1   eGpioNum22
+
+#define BTN_GPIO    eGpioNum5
+
+#define NUM_LED_PER_COLOR 9
 
 // Enumerations
+typedef enum LedColor_tag
+{
+  eRedLed = 0,
+  eGreenLed = 1,
+  eNumOfColors = 2
+}eLedColor_t;
+
 typedef enum ButtonState_tag
 {
     eBtnUndefined = 0,
-    eBtnShortPressed,
-    eBtnLongPressed
+    eBtnShortKeyPress,
+    eBtnDoubleKeyPress,
+    eBtnLongKeyPress
 } eButtonState_t;
-
-typedef enum PlayerInputState_tag
-{
-    eWaiting = 0,
-    eCorrect,
-    eIncorrect
-} ePlayerInputState_t;
-
-typedef enum ButtonId_tag
-{
-    eButtonId0 = 0,
-    eButtonId1,
-    eButtonId2,
-    eButtonId3,
-    eMaxButtonId
-} eButtonId_t;
 
 typedef enum GameState_tag
 {
     eGameRestart = 0,
-    eWaitForStart,
-    ePlayPattern,
-    eWaitForPlayer,
-    eYouWin,
-    eYouLose
+    eOngoingGame, 
+    eStalemate, 
+    eRedPlayerWin, 
+    eGreenPlayerWin
 } eGameState_t;
 
-#define MAX_LEVEL  8
-#define NUM_OF_LEDS 4
+typedef struct BoardState_tag
+{
+    bool gameBoard[eNumOfColors][NUM_LED_PER_COLOR];
+    uint8_t cursor;
+    eLedColor_t currentColor;
+}sBoardState_t;
 
 // Global variable
 uint32_t _millis;
-uint8_t randomPattern[MAX_LEVEL];
-uint8_t level;
+
+void delayMs(uint16_t ms)
+{
+    vTaskDelay(ms / portTICK_PERIOD_MS);
+}
 
 static void initIO(void)
 {
     // FIXME:
     // Replace the following code and insert
     // code to initialize all IO pins for the assigment
-    gpio_init(LED_GPIO, eOutput);
     gpio_init(BTN_GPIO, eInput);
 
+}
+
+void displayBoard(sBoardState_t *boardState)
+{
+    // FIXME:
+    // Display current board status specified in argument boardState.gameBoard[][]
+    if (gpio_read(BTN_GPIO) == eLow)
+    {
+        gpio_init(LED_LINE0, eOutput);
+        gpio_init(LED_LINE1, eOutput);
+        gpio_write(LED_LINE0, eHigh);
+        gpio_write(LED_LINE1, eHigh);
+        delayMs(500); 
+        // Hint: there is a line missing here
+        gpio_write(LED_LINE0, eInput);
+        gpio_write(LED_LINE1, eInput);
+        delayMs(100); 
+    }
+}
+
+eGameState_t checkBoard(sBoardState_t *boardState, eButtonState_t buttonState)
+{
+    // check player input
+    switch (buttonState)
+    {
+        case eBtnShortKeyPress:
+            boardState->cursor = (boardState->cursor + 1) % NUM_LED_PER_COLOR;
+            break;
+        case eBtnDoubleKeyPress:
+            boardState->cursor = (boardState->cursor - 1) % NUM_LED_PER_COLOR;
+            break;
+        case eBtnLongKeyPress:
+            boardState->gameBoard[boardState->currentColor][boardState->cursor] = true;
+            boardState->currentColor = (boardState->currentColor == eRedLed)? eGreenLed : eRedLed;
+            break;
+        default:
+            break;
+    } 
+    // FIXME
+    // Check next available cursor position, if no available position is found, then stalmate condition has been met
+    // Check if any vertical, horizontal or diagonal 3 adjacent spaces are filled by the same color
+    // If so, then a winner is found and return the corresponding game state
+    return eOngoingGame;
 }
 
 bool playSequence(eGameState_t gameState)
@@ -67,93 +111,50 @@ bool playSequence(eGameState_t gameState)
     // FIXME:
     // Playback the corresponding animation of the gameState parameter
     // Once playback has finished, return true, otherwise return false
-    gpio_write(LED_GPIO, (gpio_read(BTN_GPIO) == eLow)? eHigh : eLow); 
     return true;
 }
 
-eButtonState_t checkButtons(eButtonId_t *buttonNumber)
+eButtonState_t checkButton(void)
 {
     // FIXME:
-    // Polls each button and returns the press state and the corresponding button
-    *buttonNumber = eMaxButtonId;
+    // Polls the button and returns the press state
     return eBtnUndefined;
-}
-
-ePlayerInputState_t checkPlayerInput(eButtonState_t buttonState, eButtonId_t buttonId)
-{
-    // FIXME:
-    // Waits for player input and verifies that it is matching the pattern
-    return eWaiting;
-}
-
-void delayMs(uint16_t ms)
-{
-    vTaskDelay(ms / portTICK_PERIOD_MS);
 }
 
 int app_main(void)
 {
     eGameState_t  currentGameState = eGameRestart;
-    ePlayerInputState_t playerInputState;
-    eButtonId_t buttonId;
     eButtonState_t buttonState;
-
+    sBoardState_t boardState;
     initIO();
 
     while(1)
     {   
-        buttonState = checkButtons(&buttonId);
+        buttonState = checkButton();
         
-        if (buttonState == eBtnLongPressed)
-            currentGameState = eGameRestart;
-
         switch(currentGameState)
         {
             case eGameRestart:
-                for (uint8_t idx = 0; idx < MAX_LEVEL; idx++ )
+                for (uint8_t idx = 0; idx < NUM_LED_PER_COLOR; idx++ )
                 {
-                    randomPattern[idx] = esp_random() & (NUM_OF_LEDS - 1);
+                    boardState.gameBoard[eRedLed][idx] = false;
+                    boardState.gameBoard[eGreenLed][idx] = false;
+                    boardState.cursor = 0;
+                    boardState.currentColor = eRedLed;
                 }
-                level = 0;
-                currentGameState++;
+                currentGameState = eOngoingGame;
                 break;
-
-            case eWaitForStart:
-                playSequence(eWaitForStart);
-                if (buttonState == eBtnShortPressed)
-                    currentGameState++;
+            case eOngoingGame:
+                if (buttonState != eBtnUndefined)
+                    currentGameState = checkBoard(&boardState, buttonState);
+                displayBoard(&boardState);
                 break;
-
-            case ePlayPattern:
-                if (!playSequence(ePlayPattern))
-                    currentGameState++;
-                break;
-
-            case eWaitForPlayer:
-                playSequence(eWaitForPlayer);
-                playerInputState = checkPlayerInput(buttonState, buttonId);
-                if (playerInputState == eCorrect)
-                {
-                    level++;
-                    if (level < MAX_LEVEL)
-                    {
-                        currentGameState = ePlayPattern;
-                    }
-                    else
-                    {
-                        currentGameState = eYouWin;
-                    }
-                }
-                else if (playerInputState == eIncorrect)
-                {
-                    currentGameState = eYouLose;
-                }
-                break;
-            case eYouLose:
-            case eYouWin:
+            case eStalemate:
+            case eRedPlayerWin:
+            case eGreenPlayerWin:
                 if (!playSequence(currentGameState))
                     currentGameState = eGameRestart;
-                break;
+            break;
         }
         delayMs(1);
         _millis++;

@@ -1,2 +1,2 @@
 # uC-Prac3
-ESP32 GPIO Register Map. "Simon says"
+ESP32 GPIO Charlieplexing. "Tic Tac Toe"
